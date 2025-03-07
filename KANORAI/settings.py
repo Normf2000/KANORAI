@@ -1,6 +1,7 @@
-# Add this at the top
+# Add at the TOP of settings.py
 import sys
-sys.path.append('/app/python/lib/python3.11/site-packages')
+import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 BOT_NAME = 'kanorai'
 SPIDER_MODULES = ['kanorai.spiders']
