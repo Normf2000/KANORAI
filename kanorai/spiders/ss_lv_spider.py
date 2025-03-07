@@ -39,7 +39,24 @@ class EnhancedSsLvSpider(CrawlSpider):
         self.base_url = 'https://www.ss.lv/lv/real-estate/flats/riga/centre/'
         super().__init__(**kwargs)
         self.start_urls = [self.build_start_url()]
-
+    
+    def start_requests(self):
+    for url in self.start_urls:
+        yield scrapy.Request(
+            url,
+            callback=self.parse,
+            errback=self.handle_error,
+            meta={
+                'zyte_smartproxy': True,
+                'zyte_smartproxy_extra': {
+                    'proxy_country': 'lv'  # Target Latvian IPs
+                }
+            }
+        )
+    
+def handle_error(self, failure):
+    self.logger.error(f"Proxy error: {failure.value}")
+    
     def build_start_url(self):
         params = {'sell_type': '2'}
         if self.check_today_only:
