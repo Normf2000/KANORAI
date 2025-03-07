@@ -35,12 +35,14 @@ class EnhancedSsLvSpider(CrawlSpider):
         ),
     )
 
-    def __init__(self, check_today_only=False, min_price=450, **kwargs):
-        self.check_today_only = check_today_only
-        self.min_price = float(min_price)
-        self.base_url = 'https://www.ss.lv/lv/real-estate/flats/riga/centre/'
-        super().__init__(**kwargs)
-        self.start_urls = [self.build_start_url()]
+def __init__(self, min_price=450, **kwargs):
+    self.min_price = float(min_price)
+    self.base_url = 'https://www.ss.lv/lv/real-estate/flats/riga/centre/'
+    super().__init__(**kwargs)
+    self.start_urls = [self.build_start_url()]
+
+def build_start_url(self):
+    return f"{self.base_url}?{urlencode({'sell_type': '2'})"  # Removed today param
 
     def start_requests(self):
         for url in self.start_urls:
