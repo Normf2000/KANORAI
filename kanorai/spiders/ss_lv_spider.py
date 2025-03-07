@@ -16,21 +16,23 @@ class SsLvSpider(CrawlSpider):
     name = 'kanorai_pro'
     allowed_domains = ['ss.lv']
     
-    rules = (
-        Rule(  # Pagination rule - CHANGED
-            LinkExtractor(
-                restrict_css='a.d1:has(img[alt="Nākošā lapa"])',
-            ),
-            follow=True
+rules = (
+    Rule(  # Pagination rule - FIXED SYNTAX
+        LinkExtractor(
+            restrict_xpaths=[
+                '//a[contains(@class, "d1") and .//img[@alt="Nākošā lapa"]]'
+            ],
         ),
-        Rule(  # Item detail rule - KEEP THIS
-            LinkExtractor(
-                restrict_css='tr[id^="tr_"]:not(.head_line)',
-                deny=('/filter/',)
-            ),
-            callback='parse_item'
+        follow=True
+    ),
+    Rule(  # Item detail rule
+        LinkExtractor(
+            restrict_css='tr[id^="tr_"]:not(.head_line)',
+            deny=('/filter/',)
         ),
-    )
+        callback='parse_item'
+    ),
+)
 
     # PROPERLY INDENTED __init__ METHOD
     def __init__(self, check_today_only="False", min_bedrooms="2", max_bedrooms="6", **kwargs):
