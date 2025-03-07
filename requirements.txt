@@ -1,0 +1,4 @@
+Scrapy==2.11.0
+scrapy-zyte-smartproxy==1.2.0
+pydantic==2.6.4
+python-dateutil==2.9.0
