@@ -37,6 +37,12 @@ FEEDS = {
     }
 }
 
-AUTOTHROTTLE_ENABLED = True
-CONCURRENT_REQUESTS = 8  # From 4
-DOWNLOAD_DELAY = 1  # From 3
+custom_settings = {
+    'CONCURRENT_REQUESTS': 4,  # Increased from default 1
+    'CONCURRENT_REQUESTS_PER_DOMAIN': 2,
+    'DOWNLOAD_DELAY': 1.5,  # Reduced from 2 seconds
+    'AUTOTHROTTLE_ENABLED': True,
+    'ZYTE_SMARTPROXY_ENABLED': True,
+    'RETRY_TIMES': 2,  # Reduced from default 3
+    'RETRY_HTTP_CODES': [500, 502, 503, 504, 408, 429]
+}
