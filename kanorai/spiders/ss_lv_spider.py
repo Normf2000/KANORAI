@@ -15,29 +15,36 @@ class SsLvParams(BaseModel):
 class SsLvSpider(CrawlSpider):
     name = 'kanorai_pro'
     allowed_domains = ['ss.lv']
+    rules = (
+        Rule(LinkExtractor(restrict_css='.navi')),
+        Rule(LinkExtractor(
+            restrict_css='tr[id^="tr_"]:not(.head_line)',
+            deny=('/filter/',)
+        ), callback='parse_item'),
+    )
 
-     def __init__(self, check_today_only="False", min_bedrooms="2", max_bedrooms="6", **kwargs):
+    # PROPERLY INDENTED __init__ METHOD
+    def __init__(self, check_today_only="False", min_bedrooms="2", max_bedrooms="6", **kwargs):
         # Convert string arguments to proper types
         self.check_today_only = check_today_only.lower() == "true"
         self.min_bedrooms = int(min_bedrooms)
         self.max_bedrooms = int(max_bedrooms)
         
-        # Add argument validation
+        # Validate arguments
         self.validate_arguments()
         
         # Existing initialization
         self.start_urls = [self.build_start_url()]
         super().__init__(**kwargs)
 
-  def validate_arguments(self):
-        """Add this RIGHT AFTER __init__ method"""
+    # VALIDATION METHOD (PROPER INDENTATION)
+    def validate_arguments(self):
         if not (2 <= self.min_bedrooms <= 6):
             raise ValueError("min_bedrooms must be between 2-6")
         if not (2 <= self.max_bedrooms <= 6):
             raise ValueError("max_bedrooms must be between 2-6")
         if self.min_bedrooms > self.max_bedrooms:
             raise ValueError("min_bedrooms cannot exceed max_bedrooms")
-    
     rules = (
         Rule(LinkExtractor(restrict_css='.navi')),
         Rule(LinkExtractor(
