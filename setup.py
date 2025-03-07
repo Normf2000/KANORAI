@@ -10,4 +10,5 @@ setup(
         'scrapy-zyte-smartproxy>=1.2',
     ],
     entry_points={'scrapy': ['settings = kanorai.settings']},
+    python_requires='>=3.7',
 )
