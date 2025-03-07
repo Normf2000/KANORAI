@@ -15,23 +15,23 @@ class EnhancedSsLvSpider(CrawlSpider):
         'ZYTE_SMARTPROXY_ENABLED': True
     }
     
-    Rule(
-    LinkExtractor(
-        restrict_xpaths='//a[contains(@href, "page") and contains(text(), "Nākamie")]',
-        process_value=lambda x: urljoin('https://www.ss.lv', x)
-    ),
-    follow=True
-    ),
-    
-    ),
-        Rule(  # Item detail rule
-            LinkExtractor(
-                restrict_css='tr[id^="tr_"]:not(.head_line)',
-                deny=('/filter/',)
-            ),
-            callback='parse_item'
+rules = (
+    Rule(  # Pagination rule
+        LinkExtractor(
+            restrict_xpaths='//a[contains(text(), "Nākamie")]',
+            tags=['a'], 
+            attrs=['href']
         ),
-    )
+        follow=True
+    ),
+    Rule(  # Item detail rule
+        LinkExtractor(
+            restrict_css='tr[id^="tr_"]:not(.head_line)',
+            deny=('/filter/',)
+        ),
+        callback='parse_item'
+    ),
+)
 
     def __init__(self, check_today_only=False, min_price=450, **kwargs):
         self.check_today_only = check_today_only
