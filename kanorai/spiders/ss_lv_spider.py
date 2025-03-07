@@ -15,8 +15,7 @@ class SsLvParams(BaseModel):
 class SsLvSpider(CrawlSpider):
     name = 'kanorai_pro'
     allowed_domains = ['ss.lv']
-    
-rules = (
+    rules = (
     Rule(  # Pagination rule - FIXED SYNTAX
         LinkExtractor(
             restrict_xpaths=[
