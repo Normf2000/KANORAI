@@ -10,28 +10,30 @@ class EnhancedSsLvSpider(CrawlSpider):
     name = 'kanorai_pro_enhanced'
     allowed_domains = ['ss.lv']
     custom_settings = {
-        'DOWNLOAD_DELAY': 2,
-        'CONCURRENT_REQUESTS_PER_DOMAIN': 1,
-        'ZYTE_SMARTPROXY_ENABLED': True
+        'DOWNLOAD_DELAY': 1.5,
+        'CONCURRENT_REQUESTS': 4,
+        'CONCURRENT_REQUESTS_PER_DOMAIN': 2,
+        'ZYTE_SMARTPROXY_ENABLED': True,
+        'RETRY_TIMES': 2
     }
-    
-rules = (
-    Rule(  # Pagination rule
-        LinkExtractor(
-            restrict_xpaths='//a[contains(text(), "Nākamie")]',
-            tags=['a'], 
-            attrs=['href']
+
+    rules = (
+        Rule(
+            LinkExtractor(
+                restrict_xpaths='//a[contains(text(), "Nākamie")]',
+                tags=['a'],
+                attrs=['href']
+            ),
+            follow=True
         ),
-        follow=True
-    ),
-    Rule(  # Item detail rule
-        LinkExtractor(
-            restrict_css='tr[id^="tr_"]:not(.head_line)',
-            deny=('/filter/',)
+        Rule(
+            LinkExtractor(
+                restrict_css='tr[id^="tr_"]:not(.head_line)',
+                deny=('/filter/',)
+            ),
+            callback='parse_item'
         ),
-        callback='parse_item'
-    ),
-)
+    )
 
     def __init__(self, check_today_only=False, min_price=450, **kwargs):
         self.check_today_only = check_today_only
@@ -39,24 +41,24 @@ rules = (
         self.base_url = 'https://www.ss.lv/lv/real-estate/flats/riga/centre/'
         super().__init__(**kwargs)
         self.start_urls = [self.build_start_url()]
-    
+
     def start_requests(self):
-    for url in self.start_urls:
-        yield scrapy.Request(
-            url,
-            callback=self.parse,
-            errback=self.handle_error,
-            meta={
-                'zyte_smartproxy': True,
-                'zyte_smartproxy_extra': {
-                    'proxy_country': 'lv'  # Target Latvian IPs
+        for url in self.start_urls:
+            yield scrapy.Request(
+                url,
+                callback=self.parse,
+                errback=self.handle_error,
+                meta={
+                    'zyte_smartproxy': True,
+                    'zyte_smartproxy_extra': {
+                        'proxy_country': 'lv'
+                    }
                 }
-            }
-        )
-    
-def handle_error(self, failure):
-    self.logger.error(f"Proxy error: {failure.value}")
-    
+            )
+
+    def handle_error(self, failure):
+        self.logger.error(f"Proxy error: {failure.value}")
+
     def build_start_url(self):
         params = {'sell_type': '2'}
         if self.check_today_only:
@@ -64,17 +66,14 @@ def handle_error(self, failure):
         return f"{self.base_url}?{urlencode(params)}"
 
     def parse_item(self, response):
-        # Price validation first
         price_data = self.parse_pricing(response)
         if not price_data or price_data['price'] < self.min_price:
             return
 
-        # Bedroom validation
         bedroom_data = self.parse_rooms(response)
         if not (2 <= bedroom_data['true_bedrooms'] <= 6):
             return
 
-        # Main item parsing
         item = ApartmentItem(
             url=response.url,
             **price_data,
@@ -84,7 +83,7 @@ def handle_error(self, failure):
             description=self.parse_description(response),
             posted_date=self.parse_post_date(response),
             property_type=response.css('td.ads_opt_name:contains("Darījuma veids") + td::text').get(),
-            is_daily_listing='šodien' in (item.get('posted_date') or '').lower(),
+            is_daily_listing='šodien' in (response.css('.msg_footer::text').get() or '').lower(),
             airbnb_potential=self.calculate_potential(bedroom_data['true_bedrooms'])
         )
 
@@ -104,17 +103,14 @@ def handle_error(self, failure):
         }
 
     def parse_rooms(self, response):
-        # Direct bedroom extraction
         bedrooms = response.xpath('//td[contains(., "Guļamistabas")]/following-sibling::td/text()').get()
         total_rooms = response.xpath('//td[contains(., "Istabu skaits")]/following-sibling::td/text()').get()
 
-        # Intelligent bedroom calculation
         if bedrooms:
             true_bedrooms = int(bedrooms)
         elif total_rooms:
-            true_bedrooms = max(1, int(total_rooms) - 1)  # Assume last room is living area
+            true_bedrooms = max(1, int(total_rooms) - 1)
         else:
-            # Fallback to description analysis
             desc = response.text.lower()
             match = re.search(r'(?:guļamistabas|istabas)\D*(\d+)', desc)
             true_bedrooms = int(match.group(1)) if match else None
@@ -125,12 +121,10 @@ def handle_error(self, failure):
         }
 
     def parse_bathrooms(self, response):
-        # Structured data extraction
         bathrooms = response.xpath('//td[contains(., "Vannas istaba")]/following-sibling::td/text()').get()
         
         if not bathrooms:
             desc = response.text.lower()
-            # Improved Latvian bathroom terminology matching
             patterns = [
                 r'(?:(?:san\.? mezgls?|vannas)\D*)(\d+)',
                 r'(\d+)\s*(?:vannas istabas|vannas|wc)',
@@ -158,7 +152,6 @@ def handle_error(self, failure):
                 }
             return {'utilities_min': None, 'utilities_max': None}
         
-        # Handle different utility formats
         numbers = re.findall(r'\d+', utilities_text)
         if len(numbers) >= 2:
             return {
