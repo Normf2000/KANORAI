@@ -1,0 +1,3 @@
+project: kanorai
+requirements:
+  file: requirements.txt
