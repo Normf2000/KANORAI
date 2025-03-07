@@ -1,0 +1,14 @@
+name: Deploy to Zyte
+on: [push]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to Zyte
+        env:
+          ZYTE_APIKEY: ${{ secrets.ZYTE_APIKEY }}
+        run: |
+          pip install shub
+          shub deploy
