@@ -1,45 +1,28 @@
 import scrapy
-import re
-from datetime import datetime
-from urllib.parse import urljoin, urlencode
+from urllib.parse import urlencode
 from scrapy.spiders import CrawlSpider, Rule
 from scrapy.linkextractors import LinkExtractor
-from kanorai.items import ApartmentItem
 
 class EnhancedSsLvSpider(CrawlSpider):
     name = 'kanorai_pro_enhanced'
     allowed_domains = ['ss.lv']
     custom_settings = {
-        'DOWNLOAD_DELAY': 1.5,
-        'CONCURRENT_REQUESTS': 4,
-        'CONCURRENT_REQUESTS_PER_DOMAIN': 2,
-        'RETRY_TIMES': 3,
+        'DOWNLOAD_DELAY': 3,
+        'CONCURRENT_REQUESTS': 2,
+        'RETRY_TIMES': 5,
         'ZYTE_SMARTPROXY_ENABLED': True,
-        'AUTOTHROTTLE_ENABLED': True
+        'USER_AGENT': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }
 
     rules = (
-        Rule(
-            LinkExtractor(
-                restrict_xpaths='//a[contains(text(), "Nākamie")]',
-                process_value=lambda x: urljoin('https://www.ss.lv', x)
-            ),
-            follow=True
-        ),
-        Rule(
-            LinkExtractor(
-                restrict_css='tr[id^="tr_"]:not(.head_line)',
-                deny=('/filter/',)
-            ),
-            callback='parse_item'
-        ),
+        Rule(LinkExtractor(restrict_xpaths='//a[contains(text(), "Nākamie")]'), follow=True),
+        Rule(LinkExtractor(restrict_css='tr[id^="tr_"]:not(.head_line)'), callback='parse_item'),
     )
 
     def __init__(self, min_price=450, **kwargs):
         self.min_price = float(min_price)
         self.base_url = 'https://www.ss.lv/lv/real-estate/flats/riga/centre/'
         super().__init__(**kwargs)
-        # FIXED LINE: Added missing closing brace
         self.start_urls = [f"{self.base_url}?{urlencode({'sell_type': '2'})}"]
 
     def start_requests(self):
@@ -47,12 +30,12 @@ class EnhancedSsLvSpider(CrawlSpider):
             yield scrapy.Request(
                 url,
                 callback=self.parse,
-                errback=self.handle_error,
                 meta={
                     'zyte_smartproxy': True,
                     'zyte_smartproxy_extra': {
                         'proxy_country': 'lv',
-                        'javascript': True
+                        'javascript': True,
+                        'headers': {'Accept-Language': 'lv, en-US;q=0.7'}
                     }
                 }
             )
