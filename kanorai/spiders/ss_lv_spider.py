@@ -37,82 +37,116 @@ class SsLvSpider(CrawlSpider):
             params['today'] = '1'
         return f"{base}?{urlencode(params)}"
 
-def parse_item(self, response):
-    # Validate critical element exists before parsing
-    if not response.css('.ads_price::text').get():
-        self.logger.warning(f"Skipping invalid listing: Missing price at {response.url}")
-        return
-
-    try:
-        item = ApartmentItem()
-        item['url'] = response.url
-        
-        # Core fields with validation
-        item['price'] = self.parse_price(response.css('.ads_price::text').get())
-        item['currency'] = '€' if '€' in response.css('.ads_price::text').get() else None
-        item['bedrooms'] = response.xpath('//td[contains(., "Istabu skaits")]/following-sibling::td/text()').get()
-        item['location'] = response.css('td.ads_opt_name:contains("Rajons") + td::text').get()
-        
-        # Description handling
-        desc = response.css('#msg_div_msg::text').getall()
-        item['description'] = ' '.join(desc).strip() if desc else None
-        
-        # Date filtering
-        posted_date = response.css('.msg_footer::text').get()
-        if self.check_today_only and 'šodien' not in posted_date.lower():
+    def parse_item(self, response):
+        # Validate critical element exists before parsing
+        if not response.css('.ads_price::text').get():
+            self.logger.warning(f"Skipping invalid listing: Missing price at {response.url}")
             return
 
-        # Add other fields as needed...
-        
-        self.logger.debug(f"Successfully parsed: {response.url}")
+        try:
+            item = ApartmentItem()
+            item['url'] = response.url
+            
+            # Core fields with validation
+            item['property_type'] = response.css('td.ads_opt_name:contains("Darījuma veids") + td::text').get()
+            item = self.parse_pricing(response, item)
+            item = self.parse_rooms(response, item)
+            item = self.parse_bathrooms(response, item)
+            
+            # Description handling
+            desc = response.css('#msg_div_msg::text').getall()
+            item['description'] = ' '.join(desc).strip() if desc else None
+            
+            # Date handling
+            posted_date = response.css('.msg_footer::text').get()
+            item['posted_date'] = posted_date.strip() if posted_date else None
+            
+            # Business logic
+            item['is_daily_listing'] = 'šodien' in (item.get('posted_date') or '').lower()
+            item['airbnb_potential'] = self.calculate_potential(item)
+            
+            if self.validate_item(item):
+                self.logger.debug(f"Successfully parsed: {response.url}")
+                yield item
+
+        except Exception as e:
+            self.logger.error(f"Failed to parse {response.url}: {str(e)}")
+            self.logger.debug(f"HTML snippet:\n{response.text[:1000]}")
+            return
+
+    def parse_pricing(self, response, item):
+        price_text = response.css('.ads_price::text').get()
+        if price_text:
+            price = re.sub(r'[^\d.]', '', price_text.replace(' ', '').replace('\xa0', ''))
+            item['price'] = float(price) if price else None
+            item['currency'] = '€' if '€' in price_text else None
         return item
 
-    except Exception as e:
-        self.logger.error(f"Failed to parse {response.url}: {str(e)}")
-        self.logger.debug(f"HTML snippet:\n{response.text[:1000]}")  # First 1KB for debugging
-        return None
-        
-        # Core data extraction
-        item['property_type'] = response.css('td.ads_opt_name:contains("Darījuma veids") + td::text').get()
-        item = self.extract_pricing(response, item)
-        item = self.extract_rooms(response, item)
-        item = self.extract_bathrooms(response, item)
-        
-        # Business logic
-        item['is_daily_listing'] = 'šodien' in item.get('posted_date', '').lower()
-        item['airbnb_potential'] = self.calculate_potential(item)
-        
-        if self.validate_item(item):
-            yield item
-
-    def extract_rooms(self, response, item):
+    def parse_rooms(self, response, item):
         # Structured data
-        item['true_bedrooms'] = response.xpath('//td[contains(., "Guļamistabas")]/following-sibling::td/text()').get()
-        item['total_rooms'] = response.xpath('//td[contains(., "Istabu skaits")]/following-sibling::td/text()').get()
+        bedrooms = response.xpath('//td[contains(., "Guļamistabas")]/following-sibling::td/text()').get()
+        total_rooms = response.xpath('//td[contains(., "Istabu skaits")]/following-sibling::td/text()').get()
         
         # Fallback to description analysis
-        if not item['true_bedrooms']:
+        if not bedrooms:
             desc = response.text.lower()
-            match = re.search(r'(\d+)\s*(guļamistabas|g\.ist)', desc)
+            match = re.search(r'(\d+)\s*(guļamistabas|g\.?\s*ist\.?)', desc)
             if match:
-                item['true_bedrooms'] = int(match.group(1))
+                bedrooms = int(match.group(1))
         
-        # Final calculation
         try:
-            item['true_bedrooms'] = int(item['true_bedrooms'] or 0)
-            item['total_rooms'] = int(item['total_rooms'] or 0)
-            if item['true_bedrooms'] == 0 and item['total_rooms'] > 0:
+            item['true_bedrooms'] = int(bedrooms) if bedrooms else None
+            item['total_rooms'] = int(total_rooms) if total_rooms else None
+            
+            # Calculate bedrooms from total rooms if missing
+            if not item['true_bedrooms'] and item['total_rooms']:
                 item['true_bedrooms'] = max(1, item['total_rooms'] - 1)
-        except:
+                
+        except ValueError:
             item['true_bedrooms'] = None
             item['total_rooms'] = None
             
         return item
 
-    def extract_bathrooms(self, response, item):
+    def parse_bathrooms(self, response, item):
         # Structured data
-        item['bathrooms'] = response.xpath('//td[contains(., "Vannas istaba")]/following-sibling::td/text()').get()
+        bathrooms = response.xpath('//td[contains(., "Vannas istaba")]/following-sibling::td/text()').get()
         
-        # Description fallback
-        if not item['bathrooms']:
-            desc = response.text
+        # Fallback to description analysis
+        if not bathrooms:
+            desc = response.text.lower()
+            patterns = [
+                r'(\d+)\s*(vannas istabas|vannas)',
+                r'(\d+)\s*san\.?\s*mezgl',
+                r'(\d+)\s*wc'
+            ]
+            for pattern in patterns:
+                match = re.search(pattern, desc)
+                if match:
+                    bathrooms = int(match.group(1))
+                    break
+            else:
+                if any(x in desc for x in ['vanna', 'sanmezgls']):
+                    bathrooms = 1
+
+        try:
+            item['bathrooms'] = int(bathrooms) if bathrooms else None
+        except ValueError:
+            item['bathrooms'] = None
+            
+        return item
+
+    def calculate_potential(self, item):
+        # Your business logic here
+        if item.get('true_bedrooms') and 2 <= item['true_bedrooms'] <= 3:
+            return "High"
+        return "Medium"
+
+    def validate_item(self, item):
+        required_fields = [
+            'property_type',
+            'price',
+            'true_bedrooms',
+            'bathrooms'
+        ]
+        return all(item.get(field) for field in required_fields)
