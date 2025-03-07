@@ -1,3 +1,7 @@
+# Add this at the top
+import sys
+sys.path.append('/app/python/lib/python3.11/site-packages')
+
 BOT_NAME = 'kanorai'
 SPIDER_MODULES = ['kanorai.spiders']
 NEWSPIDER_MODULE = 'kanorai.spiders'
