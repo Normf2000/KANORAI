@@ -1,7 +1,8 @@
-# Add at the TOP of settings.py
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+# Add project directory to Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 BOT_NAME = 'kanorai'
 SPIDER_MODULES = ['kanorai.spiders']
