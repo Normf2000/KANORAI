@@ -38,5 +38,5 @@ FEEDS = {
 }
 
 AUTOTHROTTLE_ENABLED = True
-CONCURRENT_REQUESTS = 4
-DOWNLOAD_DELAY = 1.5
+DOWNLOAD_DELAY = 3  # 3-second delay between requests
+RETRY_TIMES = 2  # Retry failed requests
