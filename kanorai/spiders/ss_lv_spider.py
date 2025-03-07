@@ -15,6 +15,28 @@ class SsLvParams(BaseModel):
 class SsLvSpider(CrawlSpider):
     name = 'kanorai_pro'
     allowed_domains = ['ss.lv']
+
+     def __init__(self, check_today_only="False", min_bedrooms="2", max_bedrooms="6", **kwargs):
+        # Convert string arguments to proper types
+        self.check_today_only = check_today_only.lower() == "true"
+        self.min_bedrooms = int(min_bedrooms)
+        self.max_bedrooms = int(max_bedrooms)
+        
+        # Add argument validation
+        self.validate_arguments()
+        
+        # Existing initialization
+        self.start_urls = [self.build_start_url()]
+        super().__init__(**kwargs)
+
+  def validate_arguments(self):
+        """Add this RIGHT AFTER __init__ method"""
+        if not (2 <= self.min_bedrooms <= 6):
+            raise ValueError("min_bedrooms must be between 2-6")
+        if not (2 <= self.max_bedrooms <= 6):
+            raise ValueError("max_bedrooms must be between 2-6")
+        if self.min_bedrooms > self.max_bedrooms:
+            raise ValueError("min_bedrooms cannot exceed max_bedrooms")
     
     rules = (
         Rule(LinkExtractor(restrict_css='.navi')),
@@ -32,9 +54,12 @@ class SsLvSpider(CrawlSpider):
 
     def build_start_url(self):
         base = 'https://www.ss.lv/lv/real-estate/flats/riga/centre/'
-        params = {'sell_type': '2'}  # Izīrē filter
-        if self.check_today_only:
+        params = {'sell_type': '2'}
+        
+        # Add today param if needed
+        if self.check_today_only:  # Now using converted boolean
             params['today'] = '1'
+            
         return f"{base}?{urlencode(params)}"
 
     def parse_item(self, response):
@@ -42,7 +67,11 @@ class SsLvSpider(CrawlSpider):
         if not response.css('.ads_price::text').get():
             self.logger.warning(f"Skipping invalid listing: Missing price at {response.url}")
             return
-
+        # Date filtering (update this check)
+        if self.check_today_only:  # Use instance variable
+            if not posted_date or 'šodien' not in posted_date.lower():
+                return
+        
         try:
             item = ApartmentItem()
             item['url'] = response.url
