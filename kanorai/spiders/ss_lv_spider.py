@@ -1,170 +1,123 @@
 import scrapy
 import re
 from datetime import datetime
-from urllib.parse import urlencode
+from urllib.parse import urljoin, urlencode
 from scrapy.spiders import CrawlSpider, Rule
 from scrapy.linkextractors import LinkExtractor
-from pydantic import BaseModel, Field
 from kanorai.items import ApartmentItem
 
-class SsLvParams(BaseModel):
-    check_today_only: bool = Field(default=False)
-    min_bedrooms: int = Field(default=2, ge=2, le=6)
-    max_bedrooms: int = Field(default=6, ge=2, le=6)
-
-class SsLvSpider(CrawlSpider):
-    name = 'kanorai_pro'
+class EnhancedSsLvSpider(CrawlSpider):
+    name = 'kanorai_pro_enhanced'
     allowed_domains = ['ss.lv']
-    rules = (
-    Rule(  # Pagination rule - FIXED SYNTAX
-        LinkExtractor(
-            restrict_xpaths=[
-                '//a[contains(@class, "d1") and .//img[@alt="Nākošā lapa"]]'
-            ],
-        ),
-        follow=True
-    ),
-    Rule(  # Item detail rule
-        LinkExtractor(
-            restrict_css='tr[id^="tr_"]:not(.head_line)',
-            deny=('/filter/',)
-        ),
-        callback='parse_item'
-    ),
-)
+    custom_settings = {
+        'DOWNLOAD_DELAY': 2,
+        'CONCURRENT_REQUESTS_PER_DOMAIN': 1,
+        'ZYTE_SMARTPROXY_ENABLED': True
+    }
 
-    # PROPERLY INDENTED __init__ METHOD
-    def __init__(self, check_today_only="False", min_bedrooms="2", max_bedrooms="6", **kwargs):
-        # Convert string arguments to proper types
-        self.check_today_only = check_today_only.lower() == "true"
-        self.min_bedrooms = int(min_bedrooms)
-        self.max_bedrooms = int(max_bedrooms)
-        
-        # Validate arguments
-        self.validate_arguments()
-        
-        # Existing initialization
-        self.start_urls = [self.build_start_url()]
-        super().__init__(**kwargs)
-
-    # VALIDATION METHOD (PROPER INDENTATION)
-    def validate_arguments(self):
-        if not (2 <= self.min_bedrooms <= 6):
-            raise ValueError("min_bedrooms must be between 2-6")
-        if not (2 <= self.max_bedrooms <= 6):
-            raise ValueError("max_bedrooms must be between 2-6")
-        if self.min_bedrooms > self.max_bedrooms:
-            raise ValueError("min_bedrooms cannot exceed max_bedrooms")
     rules = (
-        Rule(LinkExtractor(restrict_css='.navi')),
-        Rule(LinkExtractor(
-            restrict_css='tr[id^="tr_"]:not(.head_line)',
-            deny=('/filter/',)
-        ), callback='parse_item'),
+        Rule(  # Pagination rule
+            LinkExtractor(
+                restrict_xpaths='//a[contains(text(), "Nākamie")]',
+                tags=['a'], 
+                attrs=['href']
+            ),
+            follow=True
+        ),
+        Rule(  # Item detail rule
+            LinkExtractor(
+                restrict_css='tr[id^="tr_"]:not(.head_line)',
+                deny=('/filter/',)
+            ),
+            callback='parse_item'
+        ),
     )
 
-    def __init__(self, check_today_only=False, min_bedrooms=2, max_bedrooms=6, **kwargs):
+    def __init__(self, check_today_only=False, min_price=450, **kwargs):
         self.check_today_only = check_today_only
-        self.bedroom_range = (min_bedrooms, max_bedrooms)
-        self.start_urls = [self.build_start_url()]
+        self.min_price = float(min_price)
+        self.base_url = 'https://www.ss.lv/lv/real-estate/flats/riga/centre/'
         super().__init__(**kwargs)
+        self.start_urls = [self.build_start_url()]
 
     def build_start_url(self):
-        base = 'https://www.ss.lv/lv/real-estate/flats/riga/centre/'
         params = {'sell_type': '2'}
-        
-        # Add today param if needed
-        if self.check_today_only:  # Now using converted boolean
+        if self.check_today_only:
             params['today'] = '1'
-            
-        return f"{base}?{urlencode(params)}"
+        return f"{self.base_url}?{urlencode(params)}"
 
     def parse_item(self, response):
-        # Validate critical element exists before parsing
-        if not response.css('.ads_price::text').get():
-            self.logger.warning(f"Skipping invalid listing: Missing price at {response.url}")
-            return
-        # Date filtering (update this check)
-        if self.check_today_only:  # Use instance variable
-            if not posted_date or 'šodien' not in posted_date.lower():
-                return
-        
-        try:
-            item = ApartmentItem()
-            item['url'] = response.url
-            
-            # Core fields with validation
-            item['property_type'] = response.css('td.ads_opt_name:contains("Darījuma veids") + td::text').get()
-            item = self.parse_pricing(response, item)
-            item = self.parse_rooms(response, item)
-            item = self.parse_bathrooms(response, item)
-            
-            # Description handling
-            desc = response.css('#msg_div_msg::text').getall()
-            item['description'] = ' '.join(desc).strip() if desc else None
-            
-            # Date handling
-            posted_date = response.css('.msg_footer::text').get()
-            item['posted_date'] = posted_date.strip() if posted_date else None
-            
-            # Business logic
-            item['is_daily_listing'] = 'šodien' in (item.get('posted_date') or '').lower()
-            item['airbnb_potential'] = self.calculate_potential(item)
-            
-            if self.validate_item(item):
-                self.logger.debug(f"Successfully parsed: {response.url}")
-                yield item
-
-        except Exception as e:
-            self.logger.error(f"Failed to parse {response.url}: {str(e)}")
-            self.logger.debug(f"HTML snippet:\n{response.text[:1000]}")
+        # Price validation first
+        price_data = self.parse_pricing(response)
+        if not price_data or price_data['price'] < self.min_price:
             return
 
-    def parse_pricing(self, response, item):
-        price_text = response.css('.ads_price::text').get()
-        if price_text:
-            price = re.sub(r'[^\d.]', '', price_text.replace(' ', '').replace('\xa0', ''))
-            item['price'] = float(price) if price else None
-            item['currency'] = '€' if '€' in price_text else None
-        return item
+        # Bedroom validation
+        bedroom_data = self.parse_rooms(response)
+        if not (2 <= bedroom_data['true_bedrooms'] <= 6):
+            return
 
-    def parse_rooms(self, response, item):
-        # Structured data
+        # Main item parsing
+        item = ApartmentItem(
+            url=response.url,
+            **price_data,
+            **bedroom_data,
+            **self.parse_bathrooms(response),
+            **self.parse_utilities(response),
+            description=self.parse_description(response),
+            posted_date=self.parse_post_date(response),
+            property_type=response.css('td.ads_opt_name:contains("Darījuma veids") + td::text').get(),
+            is_daily_listing='šodien' in (item.get('posted_date') or '').lower(),
+            airbnb_potential=self.calculate_potential(bedroom_data['true_bedrooms'])
+        )
+
+        if self.validate_item(item):
+            yield item
+
+    def parse_pricing(self, response):
+        price_text = response.css('.ads_price::text').get('')
+        price_match = re.search(r'[\d,.\s]+', price_text.replace('\xa0', ''))
+        if not price_match:
+            return None
+            
+        price = float(price_match.group().replace(',', '.').replace(' ', ''))
+        return {
+            'price': price,
+            'currency': '€' if '€' in price_text else None
+        }
+
+    def parse_rooms(self, response):
+        # Direct bedroom extraction
         bedrooms = response.xpath('//td[contains(., "Guļamistabas")]/following-sibling::td/text()').get()
         total_rooms = response.xpath('//td[contains(., "Istabu skaits")]/following-sibling::td/text()').get()
-        
-        # Fallback to description analysis
-        if not bedrooms:
-            desc = response.text.lower()
-            match = re.search(r'(\d+)\s*(guļamistabas|g\.?\s*ist\.?)', desc)
-            if match:
-                bedrooms = int(match.group(1))
-        
-        try:
-            item['true_bedrooms'] = int(bedrooms) if bedrooms else None
-            item['total_rooms'] = int(total_rooms) if total_rooms else None
-            
-            # Calculate bedrooms from total rooms if missing
-            if not item['true_bedrooms'] and item['total_rooms']:
-                item['true_bedrooms'] = max(1, item['total_rooms'] - 1)
-                
-        except ValueError:
-            item['true_bedrooms'] = None
-            item['total_rooms'] = None
-            
-        return item
 
-    def parse_bathrooms(self, response, item):
-        # Structured data
+        # Intelligent bedroom calculation
+        if bedrooms:
+            true_bedrooms = int(bedrooms)
+        elif total_rooms:
+            true_bedrooms = max(1, int(total_rooms) - 1)  # Assume last room is living area
+        else:
+            # Fallback to description analysis
+            desc = response.text.lower()
+            match = re.search(r'(?:guļamistabas|istabas)\D*(\d+)', desc)
+            true_bedrooms = int(match.group(1)) if match else None
+
+        return {
+            'true_bedrooms': true_bedrooms,
+            'total_rooms': int(total_rooms) if total_rooms else None
+        }
+
+    def parse_bathrooms(self, response):
+        # Structured data extraction
         bathrooms = response.xpath('//td[contains(., "Vannas istaba")]/following-sibling::td/text()').get()
         
-        # Fallback to description analysis
         if not bathrooms:
             desc = response.text.lower()
+            # Improved Latvian bathroom terminology matching
             patterns = [
-                r'(\d+)\s*(vannas istabas|vannas)',
-                r'(\d+)\s*san\.?\s*mezgl',
-                r'(\d+)\s*wc'
+                r'(?:(?:san\.? mezgls?|vannas)\D*)(\d+)',
+                r'(\d+)\s*(?:vannas istabas|vannas|wc)',
+                r'san\.?\s*mezgls?\D*(\d+)'
             ]
             for pattern in patterns:
                 match = re.search(pattern, desc)
@@ -172,27 +125,49 @@ class SsLvSpider(CrawlSpider):
                     bathrooms = int(match.group(1))
                     break
             else:
-                if any(x in desc for x in ['vanna', 'sanmezgls']):
-                    bathrooms = 1
+                bathrooms = 1 if any(kw in desc for kw in ['vanna', 'sanmezgls', 'duša']) else None
 
-        try:
-            item['bathrooms'] = int(bathrooms) if bathrooms else None
-        except ValueError:
-            item['bathrooms'] = None
-            
-        return item
+        return {'bathrooms': int(bathrooms) if bathrooms else None}
 
-    def calculate_potential(self, item):
-        # Your business logic here
-        if item.get('true_bedrooms') and 2 <= item['true_bedrooms'] <= 3:
-            return "High"
-        return "Medium"
+    def parse_utilities(self, response):
+        utilities_text = response.xpath('//td[contains(., "Komunālie")]/following-sibling::td/text()').get()
+        if not utilities_text:
+            desc = response.text.lower()
+            utilities_match = re.search(r'komunālie.*?(\d+)\s*-\s*(\d+)\s*€', desc, re.IGNORECASE)
+            if utilities_match:
+                return {
+                    'utilities_min': float(utilities_match.group(1)),
+                    'utilities_max': float(utilities_match.group(2))
+                }
+            return {'utilities_min': None, 'utilities_max': None}
+        
+        # Handle different utility formats
+        numbers = re.findall(r'\d+', utilities_text)
+        if len(numbers) >= 2:
+            return {
+                'utilities_min': float(numbers[0]),
+                'utilities_max': float(numbers[1])
+            }
+        return {'utilities_min': None, 'utilities_max': None}
+
+    def parse_description(self, response):
+        desc_parts = response.css('#msg_div_msg::text').getall()
+        return ' '.join(part.strip() for part in desc_parts if part.strip())
+
+    def parse_post_date(self, response):
+        date_str = response.css('.msg_footer::text').get('')
+        if 'šodien' in date_str.lower():
+            return datetime.today().strftime('%Y-%m-%d')
+        return date_str.strip()
+
+    def calculate_potential(self, bedrooms):
+        return "High" if 2 <= bedrooms <= 3 else "Medium"
 
     def validate_item(self, item):
-        required_fields = [
-            'property_type',
-            'price',
-            'true_bedrooms',
-            'bathrooms'
+        required = [
+            item['price'] >= self.min_price,
+            2 <= item['true_bedrooms'] <= 6,
+            item.get('bathrooms') is not None,
+            item.get('property_type')
         ]
-        return all(item.get(field) for field in required_fields)
+        return all(required)
