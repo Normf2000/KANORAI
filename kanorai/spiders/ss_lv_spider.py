@@ -14,16 +14,16 @@ class EnhancedSsLvSpider(CrawlSpider):
         'CONCURRENT_REQUESTS_PER_DOMAIN': 1,
         'ZYTE_SMARTPROXY_ENABLED': True
     }
-
-    rules = (
-        Rule(  # Pagination rule
-            LinkExtractor(
-                restrict_xpaths='//a[contains(text(), "Nākamie")]',
-                tags=['a'], 
-                attrs=['href']
-            ),
-            follow=True
-        ),
+    
+    Rule(
+    LinkExtractor(
+        restrict_xpaths='//a[contains(@href, "page") and contains(text(), "Nākamie")]',
+        process_value=lambda x: urljoin('https://www.ss.lv', x)
+    ),
+    follow=True
+    ),
+    
+    ),
         Rule(  # Item detail rule
             LinkExtractor(
                 restrict_css='tr[id^="tr_"]:not(.head_line)',
