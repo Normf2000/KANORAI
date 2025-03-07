@@ -39,7 +39,8 @@ class EnhancedSsLvSpider(CrawlSpider):
         self.min_price = float(min_price)
         self.base_url = 'https://www.ss.lv/lv/real-estate/flats/riga/centre/'
         super().__init__(**kwargs)
-        self.start_urls = [f"{self.base_url}?{urlencode({'sell_type': '2'})"]
+        # FIXED LINE: Added missing closing brace
+        self.start_urls = [f"{self.base_url}?{urlencode({'sell_type': '2'})}"]
 
     def start_requests(self):
         for url in self.start_urls:
