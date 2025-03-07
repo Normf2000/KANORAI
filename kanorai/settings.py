@@ -10,9 +10,13 @@ SPIDER_MODULES = ['kanorai.spiders']
 NEWSPIDER_MODULE = 'kanorai.spiders'
 
 # Replace old ZYTE_SMARTPROXY settings with:
+ZYTE_SMARTPROXY_ENABLED = True
 ZYTE_SMARTPROXY_APIKEY = "732570a902f048d9847b20f42ba1217e"  # Get from Zyte dashboard
+
 DOWNLOADER_MIDDLEWARES = {
-    'scrapy_zyte_smartproxy.ZyteSmartProxyMiddleware': 610
+    'scrapy.downloadermiddlewares.useragent.UserAgentMiddleware': None,
+    'scrapy_user_agents.middlewares.RandomUserAgentMiddleware': 400,
+    'scrapy_zyte_smartproxy.ZyteSmartProxyMiddleware': 610,
 }
 
 DOWNLOADER_MIDDLEWARES = {
