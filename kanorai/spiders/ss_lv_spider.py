@@ -15,12 +15,21 @@ class SsLvParams(BaseModel):
 class SsLvSpider(CrawlSpider):
     name = 'kanorai_pro'
     allowed_domains = ['ss.lv']
+    
     rules = (
-        Rule(LinkExtractor(restrict_css='.navi')),
-        Rule(LinkExtractor(
-            restrict_css='tr[id^="tr_"]:not(.head_line)',
-            deny=('/filter/',)
-        ), callback='parse_item'),
+        Rule(  # Pagination rule - CHANGED
+            LinkExtractor(
+                restrict_css='a.d1:has(img[alt="Nākošā lapa"])',
+            ),
+            follow=True
+        ),
+        Rule(  # Item detail rule - KEEP THIS
+            LinkExtractor(
+                restrict_css='tr[id^="tr_"]:not(.head_line)',
+                deny=('/filter/',)
+            ),
+            callback='parse_item'
+        ),
     )
 
     # PROPERLY INDENTED __init__ METHOD
