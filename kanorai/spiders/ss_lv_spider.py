@@ -37,9 +37,40 @@ class SsLvSpider(CrawlSpider):
             params['today'] = '1'
         return f"{base}?{urlencode(params)}"
 
-    def parse_item(self, response):
+def parse_item(self, response):
+    # Validate critical element exists before parsing
+    if not response.css('.ads_price::text').get():
+        self.logger.warning(f"Skipping invalid listing: Missing price at {response.url}")
+        return
+
+    try:
         item = ApartmentItem()
         item['url'] = response.url
+        
+        # Core fields with validation
+        item['price'] = self.parse_price(response.css('.ads_price::text').get())
+        item['currency'] = '€' if '€' in response.css('.ads_price::text').get() else None
+        item['bedrooms'] = response.xpath('//td[contains(., "Istabu skaits")]/following-sibling::td/text()').get()
+        item['location'] = response.css('td.ads_opt_name:contains("Rajons") + td::text').get()
+        
+        # Description handling
+        desc = response.css('#msg_div_msg::text').getall()
+        item['description'] = ' '.join(desc).strip() if desc else None
+        
+        # Date filtering
+        posted_date = response.css('.msg_footer::text').get()
+        if self.check_today_only and 'šodien' not in posted_date.lower():
+            return
+
+        # Add other fields as needed...
+        
+        self.logger.debug(f"Successfully parsed: {response.url}")
+        return item
+
+    except Exception as e:
+        self.logger.error(f"Failed to parse {response.url}: {str(e)}")
+        self.logger.debug(f"HTML snippet:\n{response.text[:1000]}")  # First 1KB for debugging
+        return None
         
         # Core data extraction
         item['property_type'] = response.css('td.ads_opt_name:contains("Darījuma veids") + td::text').get()
