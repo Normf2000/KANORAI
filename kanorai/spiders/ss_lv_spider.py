@@ -19,6 +19,7 @@ class EnhancedSsLvSpider(CrawlSpider):
 
     rules = (
         Rule(LinkExtractor(restrict_xpaths="//a[contains(text(), 'Nākamie')]"), follow=True),
+        Rule(LinkExtractor(restrict_xpaths="//a[contains(text(), 'Iepriekšējie')]"), follow=True),
         Rule(LinkExtractor(restrict_css="tr[id^='tr_']:not(.head_line)"), callback="parse_item"),
     )
 
@@ -104,8 +105,8 @@ class EnhancedSsLvSpider(CrawlSpider):
         return None
 
     def parse_rooms(self, listing):
-        bedrooms = listing.xpath("//td[contains(., 'Guļamistabas')]/following-sibling::td/text()").get()
-        total_rooms = listing.xpath("//td[contains(., 'Istabu skaits')]/following-sibling::td/text()").get()
+        bedrooms = listing.xpath(".//td[contains(text(), 'Guļamistabas')]/following-sibling::td/text()").get()
+        total_rooms = listing.xpath(".//td[contains(text(), 'Istabu skaits')]/following-sibling::td/text()").get()
         
         true_bedrooms = None
         if bedrooms and bedrooms.isdigit():
@@ -113,7 +114,7 @@ class EnhancedSsLvSpider(CrawlSpider):
         elif total_rooms and total_rooms.isdigit():
             true_bedrooms = max(1, int(total_rooms) - 1)
         else:
-            if match := re.search(r"(\d+)\s+(guļamistabas|istabas)", listing.text, re.IGNORECASE):
+            if match := re.search(r"(\d+)\s+(guļamistabas|istabas)", listing.get(), re.IGNORECASE):
                 true_bedrooms = int(match.group(1))
 
         return {
@@ -122,9 +123,9 @@ class EnhancedSsLvSpider(CrawlSpider):
         }
 
     def parse_bathrooms(self, listing):
-        bathrooms = listing.xpath("//td[contains(., 'Vannas istaba')]/following-sibling::td/text()").get()
+        bathrooms = listing.xpath(".//td[contains(text(), 'Vannas istaba')]/following-sibling::td/text()").get()
         if not bathrooms:
-            text = listing.text.lower()
+            text = listing.get().lower()
             if match := re.search(r"(\d+)\s+(vannas|san\.?\s*mezgl)", text):
                 bathrooms = match.group(1)
             elif any(kw in text for kw in ["vanna", "sanmezgls", "duša"]):
@@ -133,9 +134,9 @@ class EnhancedSsLvSpider(CrawlSpider):
         return {"bathrooms": int(bathrooms) if bathrooms and bathrooms.isdigit() else None}
 
     def parse_utilities(self, listing):
-        utilities_text = listing.xpath("//td[contains(., 'Komunālie')]/following-sibling::td/text()").get()
+        utilities_text = listing.xpath(".//td[contains(text(), 'Komunālie')]/following-sibling::td/text()").get()
         if not utilities_text:
-            utilities_text = listing.text
+            utilities_text = listing.get()
             
         numbers = [float(n) for n in re.findall(r"\d+", utilities_text)]
         return {
