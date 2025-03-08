@@ -11,7 +11,7 @@ NEWSPIDER_MODULE = 'kanorai.spiders'
 # Zyte Smart Proxy settings
 ZYTE_SMARTPROXY_ENABLED = True
 ZYTE_SMARTPROXY_APIKEY = "c531770e0c3b4db793a517d3a001a341"
-ZYTE_SMARTPROXY_URL = 'http://api.zyte.com:8011'
+ZYTE_SMARTPROXY_URL = 'http://api.zyte.com:8011'  # Correct proxy URL
 
 DOWNLOADER_MIDDLEWARES = {
     'scrapy_zyte_smartproxy.ZyteSmartProxyMiddleware': 610,
