@@ -1,4 +1,3 @@
-# settings.py
 import sys
 import os
 
@@ -9,13 +8,10 @@ BOT_NAME = 'kanorai'
 SPIDER_MODULES = ['kanorai.spiders']
 NEWSPIDER_MODULE = 'kanorai.spiders'
 
-# Replace old ZYTE_SMARTPROXY settings with:
+# Zyte Smart Proxy settings
 ZYTE_SMARTPROXY_ENABLED = True
-ZYTE_SMARTPROXY_APIKEY = "732570a902f048d9847b20f42ba1217e"  # Get from Zyte dashboard
+ZYTE_SMARTPROXY_APIKEY = "732570a902f048d9847b20f42ba1217e"  # Ensure this key is correct and valid
 ZYTE_SMARTPROXY_URL = 'http://proxy.zyte.com:8011'
-DOWNLOADER_MIDDLEWARES = {
-    'scrapy_zyte_smartproxy.ZyteSmartProxyMiddleware': 610
-}
 
 DOWNLOADER_MIDDLEWARES = {
     'scrapy_zyte_smartproxy.ZyteSmartProxyMiddleware': 610,
@@ -35,13 +31,11 @@ FEEDS = {
     }
 }
 
-custom_settings = {
-    'CONCURRENT_REQUESTS': 4,  # Increased from default 1
-    'CONCURRENT_REQUESTS_PER_DOMAIN': 2,
-    'DOWNLOAD_DELAY': 1.5,  # Reduced from 2 seconds
-    'AUTOTHROTTLE_ENABLED': True,
-    'ZYTE_SMARTPROXY_ENABLED': True,
-    'RETRY_TIMES': 5,
-    'RETRY_HTTP_CODES': [407, 429, 503],
-    'RETRY_PRIORITY_ADJUST': -1
-}
+# Custom settings
+CONCURRENT_REQUESTS = 4  # Increased from default 1
+CONCURRENT_REQUESTS_PER_DOMAIN = 2
+DOWNLOAD_DELAY = 1.5  # Reduced from 2 seconds
+AUTOTHROTTLE_ENABLED = True
+RETRY_TIMES = 5
+RETRY_HTTP_CODES = [407, 429, 503]
+RETRY_PRIORITY_ADJUST = -1
