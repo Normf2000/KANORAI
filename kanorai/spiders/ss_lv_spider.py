@@ -4,7 +4,6 @@ from scrapy.spiders import CrawlSpider, Rule
 from scrapy.linkextractors import LinkExtractor
 import re
 from datetime import datetime
-from kanorai.items import ApartmentItem
 
 class EnhancedSsLvSpider(CrawlSpider):
     name = "kanorai_pro_enhanced"
@@ -18,86 +17,60 @@ class EnhancedSsLvSpider(CrawlSpider):
         "COOKIES_ENABLED": True
     }
 
-    rules = (
-        Rule(LinkExtractor(restrict_xpaths="//a[contains(text(), 'Nākamie')]"), follow=True),
-        Rule(LinkExtractor(restrict_css="tr[id^='tr_']:not(.head_line)"), callback="parse_item"),
-    )
-
-    def __init__(self, min_price=450, scrape_today_only=False, **kwargs):
-        self.min_price = float(min_price)
-        self.scrape_today_only = scrape_today_only
-        self.base_url = "https://www.ss.lv/lv/real-estate/flats/riga/centre/filter/"
-        super().__init__(**kwargs)
-        self.start_urls = [self.base_url]
-
-    def start_requests(self):
-        for url in self.start_urls:
-            yield scrapy.Request(
-                url,
-                callback=self.parse,
-                meta={
-                    "zyte_smartproxy": True,
-                    "zyte_smartproxy_extra": {
-                        "proxy_country": "lv",
-                        "javascript": True,  # Enable JavaScript execution
-                        "headers": {"Accept-Language": "lv, en-US;q=0.7"}
-                    }
-                },
-                errback=self.handle_error
-            )
-
-    def handle_error(self, failure):
-        self.logger.error(f"Request failed: {failure.value}")
+    start_urls = ["https://www.ss.lv/lv/real-estate/flats/riga/centre/filter/"]
 
     def parse(self, response):
-        self.logger.info(f"Parsing URL: {response.url}")
+        self.logger.info(f"🔍 Parsing URL: {response.url}")
         listings = response.css("tr[id^='tr_']:not(.head_line)")
-        self.logger.info(f"Found {len(listings)} listings")
+        self.logger.info(f"🔍 Found {len(listings)} listings")
 
         for listing in listings:
             item = {
-                'transaction_type': listing.css("td:nth-child(2)::text").get(default="").strip(),  # ✅ FIXED!
-                'price': listing.xpath(".//td[contains(text(), '€')]/text()").get(default="").strip(),  # ✅ FIXED!
+                'transaction_type': listing.xpath(".//td[2]/text()").get(default="").strip(),
+                'price': listing.xpath(".//td[5]/text()").get(default="").strip(),
                 'url': response.urljoin(listing.css("a.am::attr(href)").get()),
-                'furniture_status': listing.xpath(".//td[contains(text(), 'Mēbel') or contains(text(), 'Bez mēbelēm')]/text()").get(default="").strip()  # ✅ FIXED!
+                'furniture_status': listing.xpath(
+                    ".//td[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'mēbel')]/text()"
+                ).get(default="").strip(),
             }
 
-            self.logger.info(f"Extracted BEFORE FILTER: {item}")  # ✅ Debugging log
+            self.logger.info(f"🔍 Extracted BEFORE FILTER: {item}")
 
-            # Skip items that don’t match "Izīrē"
+            # ✅ 1. Skip listings without transaction type
+            if not item['transaction_type']:
+                self.logger.warning(f"❌ Skipping {item['url']} - Missing transaction type")
+                continue
+
+            # ✅ 2. Only allow "Izīrē" (For Rent)
             if item['transaction_type'] != "Izīrē":
-                self.logger.info(f"Skipping {item['url']} (Wrong transaction type: {item['transaction_type']})")
+                self.logger.warning(f"❌ Skipping {item['url']} - Not 'Izīrē' (Value: {item['transaction_type']})")
                 continue
 
-            # ✅ Furniture Filtering: Only include "Mēbelētu", exclude "Bez mēbelēm"
-            if "Bez mēbelēm" in item['furniture_status']:
-                self.logger.info(f"Skipping {item['url']} (No furniture)")
-                continue
-
-            if "Mēbelētu" not in item['furniture_status']:
-                self.logger.info(f"Skipping {item['url']} (Not marked as furnished)")
-                continue
-
-            # ✅ Price validation
+            # ✅ 3. Ensure price is valid
             price_data = self.parse_pricing(item['price'])
-            if not price_data or price_data["price"] < self.min_price:
-                self.logger.info(f"Skipping {item['url']} (Price too low: {item['price']})")
+            if not price_data or price_data["price"] < 450:  # Minimum 450 EUR
+                self.logger.warning(f"❌ Skipping {item['url']} - Price too low")
+                continue
+            item.update(price_data)
+
+            # ✅ 4. Filter based on furniture status
+            if "Bez mēbelēm" in item['furniture_status']:
+                self.logger.warning(f"❌ Skipping {item['url']} - No furniture")
+                continue
+            if "Mēbelētu" not in item['furniture_status']:
+                self.logger.warning(f"❌ Skipping {item['url']} - Not marked as furnished")
                 continue
 
-            # ✅ Final yield
-            item.update(price_data)
+            self.logger.info(f"✅ Saved: {item}")
             yield item
 
+        self.logger.info(f"✅ Scraped data saved to: apartments.json")
+
     def parse_pricing(self, price_text):
-        """Extracts and cleans price information"""
-        if not price_text:
-            return None
-
-        clean_text = price_text.replace("\xa0", "").replace(" ", "").strip()
+        """ Extract price from the text """
+        clean_text = price_text.replace("\xa0", "").replace(" ", "")
         match = re.search(r"(\d+[\d,.]*)", clean_text)
-
         if match:
             price = float(match.group(1).replace(",", "."))
             return {"price": price, "currency": "€" if "€" in price_text else "EUR"}
-
         return None
