@@ -3,7 +3,6 @@ from urllib.parse import urlencode
 from scrapy.spiders import CrawlSpider, Rule
 from scrapy.linkextractors import LinkExtractor
 import re
-from datetime import datetime
 from kanorai.items import ApartmentItem
 
 class EnhancedSsLvSpider(CrawlSpider):
@@ -15,10 +14,13 @@ class EnhancedSsLvSpider(CrawlSpider):
         "RETRY_TIMES": 5,
         "ZYTE_SMARTPROXY_ENABLED": True,
         "USER_AGENT": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "COOKIES_ENABLED": True,
-        "FEED_FORMAT": "json",
-        "FEED_URI": "apartments.json",
-        "FEED_EXPORT_ENCODING": "utf-8"
+        "FEEDS": {
+            "apartments.json": {
+                "format": "json",
+                "encoding": "utf-8",
+                "overwrite": True
+            }
+        }
     }
 
     rules = (
@@ -36,7 +38,6 @@ class EnhancedSsLvSpider(CrawlSpider):
         for url in self.start_urls:
             yield scrapy.Request(
                 url,
-                callback=self.parse,
                 meta={
                     "zyte_smartproxy": True,
                     "zyte_smartproxy_extra": {
@@ -49,59 +50,44 @@ class EnhancedSsLvSpider(CrawlSpider):
             )
 
     def parse_item(self, response):
-        self.logger.info(f"🔍 Parsing listing: {response.url}")
-        
         item = ApartmentItem()
-        
-        # Extract transaction type
-        item['transaction_type'] = response.xpath('//td[contains(., "Darījuma veids")]/following-sibling::td/text()').get(default="").strip()
-        
-        # Extract price
-        price_text = response.css('.ads_price::text').get(default="")
-        price_data = self.parse_pricing(price_text)
-        if not price_data or price_data["price"] < self.min_price:
-            self.logger.warning(f"❌ Skipping {response.url} - Invalid price")
-            return
-        
-        # Extract furniture status
-        item['furniture_status'] = response.xpath('//td[contains(., "Mēbele")]/following-sibling::td/text()').get(default="").strip()
-        
-        # Add other fields
-        item.update(price_data)
         item['url'] = response.url
-        item['description'] = " ".join(response.css('#msg_div_msg::text').getall()).strip()
-        item['posted_date'] = response.css('.msg_footer::text').get(default="").strip()
         
-        # Validation checks
-        if not self.is_valid_item(item):
+        # Price extraction
+        price_text = response.css('.ads_price::text').get('')
+        if price_data := self.parse_pricing(price_text):
+            if price_data['price'] < self.min_price:
+                return
+            item.update(price_data)
+        else:
             return
         
-        self.logger.info(f"✅ Saving item: {item}")
+        # Transaction type
+        item['transaction_type'] = response.xpath('//td[contains(., "Darījuma veids")]/following-sibling::td/text()').get('').strip()
+        if item['transaction_type'] != "Pārdod":
+            return
+        
+        # Furniture status
+        item['furniture_status'] = response.xpath('//td[contains(., "Mēbele")]/following-sibling::td/text()').get('').strip()
+        if "Bez mēbelēm" in item['furniture_status']:
+            return
+        
+        # Description
+        item['description'] = ' '.join(response.css('#msg_div_msg::text').getall()).strip()
+        
+        # Date
+        item['posted_date'] = response.css('.msg_footer::text').get('').strip()
+        
         yield item
 
-    def parse_pricing(self, price_text):
-        """ Improved price parsing """
-        clean_text = price_text.replace("\xa0", "").replace(" ", "").replace(",", ".")
-        if match := re.search(r"(\d+\.?\d*)", clean_text):
+    def parse_pricing(self, text):
+        clean = text.replace('\xa0', '').replace(' ', '').replace(',', '.')
+        if match := re.search(r'(\d+\.?\d*)', clean):
             return {
-                "price": float(match.group(1)),
-                "currency": "€" if "€" in price_text else "EUR"
+                'price': float(match.group(1)),
+                'currency': '€' if '€' in text else 'EUR'
             }
         return None
-
-    def is_valid_item(self, item):
-        """ Consolidated validation checks """
-        checks = [
-            item.get('transaction_type') == "Pārdod",
-            item.get('price', 0) >= self.min_price,
-            "Bez mēbelēm" not in item.get('furniture_status', ""),
-            bool(item.get('description'))
-        ]
-        
-        if not all(checks):
-            self.logger.warning(f"❌ Invalid item: {dict(item)}")
-            return False
-        return True
 
     def handle_error(self, failure):
         self.logger.error(f"Request failed: {failure.value}")
