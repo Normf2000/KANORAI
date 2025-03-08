@@ -47,10 +47,10 @@ LOG_FILE = "scrapy_log.txt"
 REQUEST_FINGERPRINTER_IMPLEMENTATION = "2.7"
 
 FEEDS = {
-    'apartments.json': {
-        'format': 'json',
-        'encoding': 'utf8',
-        'store_empty': False,  # Ensures empty results are NOT saved
-        'indent': 4,  # Pretty-print JSON
+    "apartments.json": {
+        "format": "json",
+        "encoding": "utf8",
+        "store_empty": False,
+        "indent": 4,
     }
 }
