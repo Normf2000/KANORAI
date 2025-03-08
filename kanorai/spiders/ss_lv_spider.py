@@ -54,48 +54,47 @@ class EnhancedSsLvSpider(CrawlSpider):
         listings = response.css("tr[id^='tr_']:not(.head_line)")
         self.logger.info(f"Found {len(listings)} listings")
         for listing in listings:
+            item = {
+                'transaction_type': listing.xpath(".//td[3]/text()").get(),
+                'price': listing.xpath(".//td[5]/text()").get(),
+                'url': response.urljoin(listing.css("a.am::attr(href)").get())
+            }
+            self.logger.info(f"Extracted item: {item}")  # Debugging Log
+
             # Ensure the listing is for "Izīrē" only
-            transaction_type = listing.css("td.ads_opt_name:contains('Darījuma veids') + td::text").get()
-            self.logger.info(f"Transaction type: {transaction_type}")
+            transaction_type = item['transaction_type']
             if transaction_type != "Izīrē":
                 continue
 
             # Price validation
-            price_data = self.parse_pricing(listing)
-            self.logger.info(f"Price data: {price_data}")
+            price_data = self.parse_pricing(item['price'])
             if not price_data or price_data["price"] < self.min_price:
                 continue
 
             # Bedroom validation
             bedroom_data = self.parse_rooms(listing)
-            self.logger.info(f"Bedroom data: {bedroom_data}")
             if not bedroom_data.get("true_bedrooms") or not (2 <= bedroom_data["true_bedrooms"] <= 3):
                 continue
 
             # Bathroom validation
             bathroom_data = self.parse_bathrooms(listing)
-            self.logger.info(f"Bathroom data: {bathroom_data}")
             if not bathroom_data or not (1 <= bathroom_data["bathrooms"] <= 2):
                 continue
 
-            item = ApartmentItem(
-                url=response.urljoin(listing.css("a::attr(href)").get()),
-                **price_data,
-                **bedroom_data,
-                **bathroom_data,
-                **self.parse_utilities(listing),
-                description=self.parse_description(listing),
-                posted_date=self.parse_post_date(listing),
-                property_type=transaction_type,
-                is_daily_listing="šodien" in (listing.css(".msg_footer::text").get() or "").lower(),
-                airbnb_potential=self.calculate_potential(bedroom_data["true_bedrooms"])
-            )
+            item.update(price_data)
+            item.update(bedroom_data)
+            item.update(bathroom_data)
+            item.update(self.parse_utilities(listing))
+            item['description'] = self.parse_description(listing)
+            item['posted_date'] = self.parse_post_date(listing)
+            item['property_type'] = transaction_type
+            item['is_daily_listing'] = "šodien" in (listing.css(".msg_footer::text").get() or "").lower()
+            item['airbnb_potential'] = self.calculate_potential(bedroom_data["true_bedrooms"])
 
             if self.validate_item(item):
                 yield item
 
-    def parse_pricing(self, listing):
-        price_text = listing.css(".ads_price::text").get("")
+    def parse_pricing(self, price_text):
         clean_text = price_text.replace("\xa0", "").replace(" ", "")
         if match := re.search(r"(\d+[\d,.]*)", clean_text):
             price = float(match.group(1).replace(",", "."))
