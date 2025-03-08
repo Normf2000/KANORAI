@@ -14,7 +14,8 @@ class EnhancedSsLvSpider(CrawlSpider):
         "CONCURRENT_REQUESTS": 4,
         "RETRY_TIMES": 5,
         "ZYTE_SMARTPROXY_ENABLED": True,
-        "USER_AGENT": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        "USER_AGENT": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "COOKIES_ENABLED": True
     }
 
     rules = (
@@ -38,7 +39,7 @@ class EnhancedSsLvSpider(CrawlSpider):
                     "zyte_smartproxy": True,
                     "zyte_smartproxy_extra": {
                         "proxy_country": "lv",
-                        "javascript": True,
+                        "javascript": True,  # Enable JavaScript execution
                         "headers": {"Accept-Language": "lv, en-US;q=0.7"}
                     }
                 },
@@ -49,25 +50,31 @@ class EnhancedSsLvSpider(CrawlSpider):
         self.logger.error(f"Request failed: {failure.value}")
 
     def parse(self, response):
+        self.logger.info(f"Parsing URL: {response.url}")
         listings = response.css("tr[id^='tr_']:not(.head_line)")
+        self.logger.info(f"Found {len(listings)} listings")
         for listing in listings:
             # Ensure the listing is for "Izīrē" only
             transaction_type = listing.css("td.ads_opt_name:contains('Darījuma veids') + td::text").get()
+            self.logger.info(f"Transaction type: {transaction_type}")
             if transaction_type != "Izīrē":
                 continue
 
             # Price validation
             price_data = self.parse_pricing(listing)
+            self.logger.info(f"Price data: {price_data}")
             if not price_data or price_data["price"] < self.min_price:
                 continue
 
             # Bedroom validation
             bedroom_data = self.parse_rooms(listing)
+            self.logger.info(f"Bedroom data: {bedroom_data}")
             if not bedroom_data.get("true_bedrooms") or not (2 <= bedroom_data["true_bedrooms"] <= 3):
                 continue
 
             # Bathroom validation
             bathroom_data = self.parse_bathrooms(listing)
+            self.logger.info(f"Bathroom data: {bathroom_data}")
             if not bathroom_data or not (1 <= bathroom_data["bathrooms"] <= 2):
                 continue
 
