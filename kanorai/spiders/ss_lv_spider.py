@@ -22,8 +22,9 @@ class EnhancedSsLvSpider(CrawlSpider):
         Rule(LinkExtractor(restrict_css='tr[id^="tr_"]:not(.head_line)'), callback='parse_item'),
     )
 
-    def __init__(self, min_price=450, **kwargs):
+    def __init__(self, min_price=450, scrape_today_only=False, **kwargs):
         self.min_price = float(min_price)
+        self.scrape_today_only = scrape_today_only  # Add an argument to control scraping today's listings only
         self.base_url = 'https://www.ss.lv/lv/real-estate/flats/riga/centre/'
         super().__init__(**kwargs)
         self.start_urls = [f"{self.base_url}?{urlencode({'sell_type': '2'})}"]
