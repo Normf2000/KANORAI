@@ -2,13 +2,16 @@ import scrapy
 from urllib.parse import urlencode
 from scrapy.spiders import CrawlSpider, Rule
 from scrapy.linkextractors import LinkExtractor
+import re
+from datetime import datetime
+from kanorai.items import ApartmentItem  # Ensure this import is correct
 
 class EnhancedSsLvSpider(CrawlSpider):
     name = 'kanorai_pro_enhanced'
     allowed_domains = ['ss.lv']
     custom_settings = {
-        'DOWNLOAD_DELAY': 3,
-        'CONCURRENT_REQUESTS': 2,
+        'DOWNLOAD_DELAY': 1.5,
+        'CONCURRENT_REQUESTS': 4,
         'RETRY_TIMES': 5,
         'ZYTE_SMARTPROXY_ENABLED': True,
         'USER_AGENT': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
