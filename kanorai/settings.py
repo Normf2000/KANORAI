@@ -10,8 +10,8 @@ NEWSPIDER_MODULE = 'kanorai.spiders'
 
 # Zyte Smart Proxy settings
 ZYTE_SMARTPROXY_ENABLED = True
-ZYTE_SMARTPROXY_APIKEY = "c531770e0c3b4db793a517d3a001a341"  # Updated API key
-ZYTE_SMARTPROXY_URL = 'http://proxy.zyte.com:8011'  # Correct Zyte proxy URL
+ZYTE_SMARTPROXY_APIKEY = "c531770e0c3b4db793a517d3a001a341"
+ZYTE_SMARTPROXY_URL = 'http://api.zyte.com:8011'
 
 DOWNLOADER_MIDDLEWARES = {
     'scrapy_zyte_smartproxy.ZyteSmartProxyMiddleware': 610,
@@ -39,3 +39,6 @@ AUTOTHROTTLE_ENABLED = True
 RETRY_TIMES = 5
 RETRY_HTTP_CODES = [407, 429, 503]
 RETRY_PRIORITY_ADJUST = -1
+
+# Save logs to a file
+LOG_FILE = 'scrapy_log.txt'
