@@ -46,7 +46,6 @@ LOG_FILE = "scrapy_log.txt"
 # Correct setting for REQUEST_FINGERPRINTER_IMPLEMENTATION
 REQUEST_FINGERPRINTER_IMPLEMENTATION = "2.7"
 
-# Ensure Scrapy saves JSON output correctly
 FEEDS = {
     'apartments.json': {
         'format': 'json',
