@@ -41,7 +41,8 @@ class EnhancedSsLvSpider(CrawlSpider):
                         'javascript': True,
                         'headers': {'Accept-Language': 'lv, en-US;q=0.7'}
                     }
-                }
+                },
+                errback=self.handle_error  # Add error handling
             )
 
     def handle_error(self, failure):
