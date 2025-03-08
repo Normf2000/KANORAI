@@ -1,20 +1,16 @@
 import scrapy
-from urllib.parse import urlencode
-from scrapy.spiders import CrawlSpider, Rule
-from scrapy.linkextractors import LinkExtractor
 import re
-from datetime import datetime
-from kanorai.items import ApartmentItem  # Ensure this exists in your project
+from urllib.parse import urljoin
 
-class EnhancedSsLvSpider(CrawlSpider):
-    name = "kanorai_pro_enhanced"
+class SsLvSpider(scrapy.Spider):
+    name = "ss_lv_apartments"
     allowed_domains = ["ss.lv"]
+    start_urls = ["https://www.ss.lv/lv/real-estate/flats/riga/centre/filter/?sell_type=2"]
+
     custom_settings = {
         "DOWNLOAD_DELAY": 1.5,
         "CONCURRENT_REQUESTS": 4,
         "RETRY_TIMES": 5,
-        "ZYTE_SMARTPROXY_ENABLED": True,
-        "USER_AGENT": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "COOKIES_ENABLED": True,
         "FEEDS": {
             "apartments.json": {
@@ -26,37 +22,6 @@ class EnhancedSsLvSpider(CrawlSpider):
         }
     }
 
-    rules = (
-        Rule(LinkExtractor(restrict_xpaths="//a[contains(text(), 'Nākamie')]"), follow=True),
-        Rule(LinkExtractor(restrict_css="tr[id^='tr_']:not(.head_line)"), callback="parse_item"),
-    )
-
-    def __init__(self, min_price=450, scrape_today_only=False, **kwargs):
-        self.min_price = float(min_price)
-        self.scrape_today_only = scrape_today_only
-        self.base_url = "https://www.ss.lv/lv/real-estate/flats/riga/centre/filter/?sell_type=2"
-        super().__init__(**kwargs)
-        self.start_urls = [self.base_url]
-
-    def start_requests(self):
-        for url in self.start_urls:
-            yield scrapy.Request(
-                url,
-                callback=self.parse,
-                meta={
-                    "zyte_smartproxy": True,
-                    "zyte_smartproxy_extra": {
-                        "proxy_country": "lv",
-                        "javascript": True,
-                        "headers": {"Accept-Language": "lv, en-US;q=0.7"}
-                    }
-                },
-                errback=self.handle_error
-            )
-
-    def handle_error(self, failure):
-        self.logger.error(f"🚨 Request failed: {failure.value}")
-
     def parse(self, response):
         self.logger.info(f"🔍 Parsing URL: {response.url}")
         listings = response.css("tr[id^='tr_']:not(.head_line)")
@@ -64,58 +29,72 @@ class EnhancedSsLvSpider(CrawlSpider):
 
         extracted_items = []
         for listing in listings:
-            item = {
-                "transaction_type": listing.xpath("normalize-space(.//td[2]/text())").get(),
-                "price": listing.xpath("normalize-space(.//td[5]/text())").get(),
-                "url": response.urljoin(listing.css("a.am::attr(href)").get()),
-                "furniture_status": listing.xpath(
-                    ".//td[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'mēbel')]/text()"
-                ).get(default="").strip(),
-            }
+            try:
+                # Extract transaction type
+                transaction_type = listing.xpath("normalize-space(.//td[2]//strong/text())").get()
+                if not transaction_type:
+                    transaction_type = listing.xpath("normalize-space(.//td[2]/text())").get()
 
-            self.logger.info(f"🔍 Extracted BEFORE FILTER: {item}")
+                # Extract price
+                price_raw = listing.xpath("normalize-space(.//td[5]//text())").get()
+                price_clean = price_raw.replace("\xa0", "").replace(" ", "").replace("€", "") if price_raw else ""
 
-            # ✅ 1. Skip listings without transaction type
-            if not item["transaction_type"]:
-                self.logger.warning(f"❌ Skipping {item['url']} - Missing transaction type")
-                continue
+                # Extract URL
+                url = listing.css("a.am::attr(href)").get()
+                full_url = urljoin(response.url, url) if url else ""
 
-            # ✅ 2. Only allow "Izīrē" (For Rent)
-            if "Izīrē" not in item["transaction_type"]:
-                self.logger.warning(f"❌ Skipping {item['url']} - Not 'Izīrē' (Value: {item['transaction_type']})")
-                continue
+                # Extract furniture status
+                furniture_status = listing.xpath(
+                    "normalize-space(.//td[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'mēbel')]/text())"
+                ).get()
 
-            # ✅ 3. Ensure price is valid
-            price_data = self.parse_pricing(item["price"])
-            if not price_data or price_data["price"] < self.min_price:
-                self.logger.warning(f"❌ Skipping {item['url']} - Price too low ({price_data})")
-                continue
-            item.update(price_data)
+                item = {
+                    "transaction_type": transaction_type.strip() if transaction_type else "",
+                    "price": price_clean.strip() if price_clean else "",
+                    "url": full_url.strip() if full_url else "",
+                    "furniture_status": furniture_status.strip() if furniture_status else "",
+                }
 
-            # ✅ 4. Filter based on furniture status
-            if "Bez mēbelēm" in item["furniture_status"]:
-                self.logger.warning(f"❌ Skipping {item['url']} - No furniture")
-                continue
-            if "Mēbelētu" not in item["furniture_status"]:
-                self.logger.warning(f"❌ Skipping {item['url']} - Not marked as furnished")
-                continue
+                self.logger.info(f"🔍 Extracted BEFORE FILTER: {item}")
 
-            self.logger.info(f"✅ Saved: {item}")
-            extracted_items.append(item)
+                # ✅ Skip if transaction type is missing
+                if not item["transaction_type"]:
+                    self.logger.warning(f"❌ Skipping {item['url']} - Missing transaction type")
+                    continue
+
+                # ✅ Only allow "Izīrē" (For Rent)
+                if "Izīrē" not in item["transaction_type"]:
+                    self.logger.warning(f"❌ Skipping {item['url']} - Not 'Izīrē' (Value: {item['transaction_type']})")
+                    continue
+
+                # ✅ Ensure price is valid
+                price_numeric = re.search(r"(\d+[\d,.]*)", item["price"])
+                if not price_numeric:
+                    self.logger.warning(f"❌ Skipping {item['url']} - Invalid price format ({item['price']})")
+                    continue
+
+                item["price"] = float(price_numeric.group(1).replace(",", "."))
+                if item["price"] < 450:  # Minimum price filter
+                    self.logger.warning(f"❌ Skipping {item['url']} - Price too low ({item['price']}€)")
+                    continue
+
+                # ✅ Skip if no furniture
+                if "Bez mēbelēm" in item["furniture_status"]:
+                    self.logger.warning(f"❌ Skipping {item['url']} - No furniture")
+                    continue
+
+                # ✅ Skip if not marked as furnished
+                if "Mēbelētu" not in item["furniture_status"]:
+                    self.logger.warning(f"❌ Skipping {item['url']} - Not marked as furnished")
+                    continue
+
+                self.logger.info(f"✅ Saved: {item}")
+                extracted_items.append(item)
+
+            except Exception as e:
+                self.logger.error(f"🚨 Error processing listing: {e}")
 
         if not extracted_items:
             self.logger.warning("⚠️ No listings matched criteria. Check filters.")
 
-        return extracted_items  # ✅ Important: Ensure Scrapy actually returns data
-
-    def parse_pricing(self, price_text):
-        """ Extract price from the text """
-        if not price_text:
-            return None
-
-        clean_text = price_text.replace("\xa0", "").replace(" ", "").replace("€", "")
-        match = re.search(r"(\d+[\d,.]*)", clean_text)
-        if match:
-            price = float(match.group(1).replace(",", "."))
-            return {"price": price, "currency": "€"}
-        return None
+        return extracted_items  # ✅ Important: Scrapy must return data
