@@ -19,16 +19,15 @@ class EnhancedSsLvSpider(CrawlSpider):
 
     rules = (
         Rule(LinkExtractor(restrict_xpaths="//a[contains(text(), 'Nākamie')]"), follow=True),
-        Rule(LinkExtractor(restrict_xpaths="//a[contains(text(), 'Iepriekšējie')]"), follow=True),
         Rule(LinkExtractor(restrict_css="tr[id^='tr_']:not(.head_line)"), callback="parse_item"),
     )
 
     def __init__(self, min_price=450, scrape_today_only=False, **kwargs):
         self.min_price = float(min_price)
         self.scrape_today_only = scrape_today_only
-        self.base_url = "https://www.ss.lv/lv/real-estate/flats/riga/centre/"
+        self.base_url = "https://www.ss.lv/lv/real-estate/flats/riga/centre/filter/"
         super().__init__(**kwargs)
-        self.start_urls = [f"{self.base_url}?{urlencode({'sell_type': '2'})}"]
+        self.start_urls = [self.base_url]
 
     def start_requests(self):
         for url in self.start_urls:
@@ -50,11 +49,6 @@ class EnhancedSsLvSpider(CrawlSpider):
         self.logger.error(f"Request failed: {failure.value}")
 
     def parse(self, response):
-        for item in self.parse_item(response):
-            yield item
-
-    def parse_item(self, response):
-        # Extract listings
         listings = response.css("tr[id^='tr_']:not(.head_line)")
         for listing in listings:
             # Ensure the listing is for "Izīrē" only
@@ -78,7 +72,7 @@ class EnhancedSsLvSpider(CrawlSpider):
                 continue
 
             item = ApartmentItem(
-                url=listing.css("a::attr(href)").get(),
+                url=response.urljoin(listing.css("a::attr(href)").get()),
                 **price_data,
                 **bedroom_data,
                 **bathroom_data,
