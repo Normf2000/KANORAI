@@ -56,10 +56,10 @@ class EnhancedSsLvSpider(CrawlSpider):
 
         for listing in listings:
             item = {
-                'transaction_type': listing.css("td:nth-child(3)::text").get(default="").strip(),
+                'transaction_type': listing.xpath(".//td[1]//text()").get(default="").strip(),  # ✅ Corrected
                 'price': listing.css("td:nth-child(5)::text").get(default="").strip(),
                 'url': response.urljoin(listing.css("a.am::attr(href)").get()),
-                'furniture_status': listing.css("td:nth-child(6)::text").get(default="").strip()  # ✅ Extract furniture status
+                'furniture_status': listing.xpath(".//td[contains(text(), 'Mēbel')]//text()").get(default="").strip()  # ✅ Corrected
             }
 
             self.logger.info(f"Extracted BEFORE FILTER: {item}")  # ✅ Debugging log
