@@ -53,116 +53,51 @@ class EnhancedSsLvSpider(CrawlSpider):
         self.logger.info(f"Parsing URL: {response.url}")
         listings = response.css("tr[id^='tr_']:not(.head_line)")
         self.logger.info(f"Found {len(listings)} listings")
+
         for listing in listings:
             item = {
-                'transaction_type': listing.xpath(".//td[3]/text()").get(),
-                'price': listing.xpath(".//td[5]/text()").get(),
-                'url': response.urljoin(listing.css("a.am::attr(href)").get())
+                'transaction_type': listing.css("td:nth-child(3)::text").get(default="").strip(),
+                'price': listing.css("td:nth-child(5)::text").get(default="").strip(),
+                'url': response.urljoin(listing.css("a.am::attr(href)").get()),
+                'furniture_status': listing.css("td:nth-child(6)::text").get(default="").strip()  # ✅ Extract furniture status
             }
-            self.logger.info(f"Extracted item: {item}")  # Debugging Log
 
-            # Ensure the listing is for "Izīrē" only
-            transaction_type = item['transaction_type']
-            if transaction_type != "Izīrē":
+            self.logger.info(f"Extracted BEFORE FILTER: {item}")  # ✅ Debugging log
+
+            # Skip items that don’t match "Izīrē"
+            if item['transaction_type'] != "Izīrē":
+                self.logger.info(f"Skipping {item['url']} (Wrong transaction type: {item['transaction_type']})")
                 continue
 
-            # Price validation
+            # ✅ Furniture Filtering: Only include "Mēbelētu", exclude "Bez mēbelēm"
+            if "Bez mēbelēm" in item['furniture_status']:
+                self.logger.info(f"Skipping {item['url']} (No furniture)")
+                continue
+
+            if "Mēbelētu" not in item['furniture_status']:
+                self.logger.info(f"Skipping {item['url']} (Not marked as furnished)")
+                continue
+
+            # ✅ Price validation
             price_data = self.parse_pricing(item['price'])
             if not price_data or price_data["price"] < self.min_price:
+                self.logger.info(f"Skipping {item['url']} (Price too low: {item['price']})")
                 continue
 
-            # Bedroom validation
-            bedroom_data = self.parse_rooms(listing)
-            if not bedroom_data.get("true_bedrooms") or not (2 <= bedroom_data["true_bedrooms"] <= 3):
-                continue
-
-            # Bathroom validation
-            bathroom_data = self.parse_bathrooms(listing)
-            if not bathroom_data or not (1 <= bathroom_data["bathrooms"] <= 2):
-                continue
-
+            # ✅ Final yield
             item.update(price_data)
-            item.update(bedroom_data)
-            item.update(bathroom_data)
-            item.update(self.parse_utilities(listing))
-            item['description'] = self.parse_description(listing)
-            item['posted_date'] = self.parse_post_date(listing)
-            item['property_type'] = transaction_type
-            item['is_daily_listing'] = "šodien" in (listing.css(".msg_footer::text").get() or "").lower()
-            item['airbnb_potential'] = self.calculate_potential(bedroom_data["true_bedrooms"])
-
-            if self.validate_item(item):
-                yield item
+            yield item
 
     def parse_pricing(self, price_text):
-        clean_text = price_text.replace("\xa0", "").replace(" ", "")
-        if match := re.search(r"(\d+[\d,.]*)", clean_text):
+        """Extracts and cleans price information"""
+        if not price_text:
+            return None
+
+        clean_text = price_text.replace("\xa0", "").replace(" ", "").strip()
+        match = re.search(r"(\d+[\d,.]*)", clean_text)
+
+        if match:
             price = float(match.group(1).replace(",", "."))
-            return {
-                "price": price,
-                "currency": "€" if "€" in price_text else "EUR"
-            }
+            return {"price": price, "currency": "€" if "€" in price_text else "EUR"}
+
         return None
-
-    def parse_rooms(self, listing):
-        bedrooms = listing.xpath(".//td[contains(text(), 'Guļamistabas')]/following-sibling::td/text()").get()
-        total_rooms = listing.xpath(".//td[contains(text(), 'Istabu skaits')]/following-sibling::td/text()").get()
-        
-        true_bedrooms = None
-        if bedrooms and bedrooms.isdigit():
-            true_bedrooms = int(bedrooms)
-        elif total_rooms and total_rooms.isdigit():
-            true_bedrooms = max(1, int(total_rooms) - 1)
-        else:
-            if match := re.search(r"(\d+)\s+(guļamistabas|istabas)", listing.get(), re.IGNORECASE):
-                true_bedrooms = int(match.group(1))
-
-        return {
-            "true_bedrooms": true_bedrooms,
-            "total_rooms": int(total_rooms) if total_rooms and total_rooms.isdigit() else None
-        }
-
-    def parse_bathrooms(self, listing):
-        bathrooms = listing.xpath(".//td[contains(text(), 'Vannas istaba')]/following-sibling::td/text()").get()
-        if not bathrooms:
-            text = listing.get().lower()
-            if match := re.search(r"(\d+)\s+(vannas|san\.?\s*mezgl)", text):
-                bathrooms = match.group(1)
-            elif any(kw in text for kw in ["vanna", "sanmezgls", "duša"]):
-                bathrooms = 1
-
-        return {"bathrooms": int(bathrooms) if bathrooms and bathrooms.isdigit() else None}
-
-    def parse_utilities(self, listing):
-        utilities_text = listing.xpath(".//td[contains(text(), 'Komunālie')]/following-sibling::td/text()").get()
-        if not utilities_text:
-            utilities_text = listing.get()
-            
-        numbers = [float(n) for n in re.findall(r"\d+", utilities_text)]
-        return {
-            "utilities_min": min(numbers) if numbers else None,
-            "utilities_max": max(numbers) if numbers else None
-        }
-
-    def parse_description(self, listing):
-        return " ".join([
-            p.strip() for p in listing.css("#msg_div_msg::text").getall()
-            if p.strip()
-        ]) or None
-
-    def parse_post_date(self, listing):
-        date_str = listing.css(".msg_footer::text").get("")
-        if "šodien" in date_str.lower():
-            return datetime.now().strftime("%Y-%m-%d")
-        return date_str.strip() or None
-
-    def calculate_potential(self, bedrooms):
-        return "High" if bedrooms in (2, 3) else "Medium"
-
-    def validate_item(self, item):
-        return all([
-            item.get("price") and item["price"] >= self.min_price,
-            item.get("true_bedrooms") and 2 <= item["true_bedrooms"] <= 3,
-            item.get("bathrooms") and 1 <= item["bathrooms"] <= 2,
-            item.get("property_type") == "Izīrē"
-        ])
