@@ -48,6 +48,11 @@ class EnhancedSsLvSpider(CrawlSpider):
     def handle_error(self, failure):
         self.logger.error(f"Request failed: {failure.value}")
 
+    def parse(self, response):
+        # Implement the parse method to handle the response
+        for item in self.parse_item(response):
+            yield item
+
     def parse_item(self, response):
         # Price validation
         price_data = self.parse_pricing(response)
