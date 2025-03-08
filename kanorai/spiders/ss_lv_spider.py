@@ -4,7 +4,7 @@ from scrapy.spiders import CrawlSpider, Rule
 from scrapy.linkextractors import LinkExtractor
 import re
 from datetime import datetime
-from kanorai.items import ApartmentItem  # Ensure this import is correct
+from kanorai.items import ApartmentItem
 
 class EnhancedSsLvSpider(CrawlSpider):
     name = "kanorai_pro_enhanced"
@@ -24,7 +24,7 @@ class EnhancedSsLvSpider(CrawlSpider):
 
     def __init__(self, min_price=450, scrape_today_only=False, **kwargs):
         self.min_price = float(min_price)
-        self.scrape_today_only = scrape_today_only  # Add an argument to control scraping today's listings only
+        self.scrape_today_only = scrape_today_only
         self.base_url = "https://www.ss.lv/lv/real-estate/flats/riga/centre/"
         super().__init__(**kwargs)
         self.start_urls = [f"{self.base_url}?{urlencode({'sell_type': '2'})}"]
@@ -42,46 +42,58 @@ class EnhancedSsLvSpider(CrawlSpider):
                         "headers": {"Accept-Language": "lv, en-US;q=0.7"}
                     }
                 },
-                errback=self.handle_error  # Add error handling
+                errback=self.handle_error
             )
 
     def handle_error(self, failure):
         self.logger.error(f"Request failed: {failure.value}")
 
     def parse(self, response):
-        # Implement the parse method to handle the response
         for item in self.parse_item(response):
             yield item
 
     def parse_item(self, response):
-        # Price validation
-        price_data = self.parse_pricing(response)
-        if not price_data or price_data["price"] < self.min_price:
-            return
+        # Extract listings
+        listings = response.css("tr[id^='tr_']:not(.head_line)")
+        for listing in listings:
+            # Ensure the listing is for "Izīrē" only
+            transaction_type = listing.css("td.ads_opt_name:contains('Darījuma veids') + td::text").get()
+            if transaction_type != "Izīrē":
+                continue
 
-        # Bedroom validation
-        bedroom_data = self.parse_rooms(response)
-        if not bedroom_data.get("true_bedrooms") or not (2 <= bedroom_data["true_bedrooms"] <= 6):
-            return
+            # Price validation
+            price_data = self.parse_pricing(listing)
+            if not price_data or price_data["price"] < self.min_price:
+                continue
 
-        item = ApartmentItem(
-            url=response.url,
-            **price_data,
-            **bedroom_data,
-            **self.parse_bathrooms(response),
-            **self.parse_utilities(response),
-            description=self.parse_description(response),
-            posted_date=self.parse_post_date(response),
-            property_type=response.css("td.ads_opt_name:contains('Darījuma veids') + td::text").get(),
-            is_daily_listing="šodien" in (response.css(".msg_footer::text").get() or "").lower(),
-            airbnb_potential=self.calculate_potential(bedroom_data["true_bedrooms"])
-        )
+            # Bedroom validation
+            bedroom_data = self.parse_rooms(listing)
+            if not bedroom_data.get("true_bedrooms") or not (2 <= bedroom_data["true_bedrooms"] <= 3):
+                continue
 
-        if self.validate_item(item):
-            yield item
+            # Bathroom validation
+            bathroom_data = self.parse_bathrooms(listing)
+            if not bathroom_data or not (1 <= bathroom_data["bathrooms"] <= 2):
+                continue
 
-    def parse_pricing(self, response):
-        price_text = response.css(".ads_price::text").get("")
+            item = ApartmentItem(
+                url=listing.css("a::attr(href)").get(),
+                **price_data,
+                **bedroom_data,
+                **bathroom_data,
+                **self.parse_utilities(listing),
+                description=self.parse_description(listing),
+                posted_date=self.parse_post_date(listing),
+                property_type=transaction_type,
+                is_daily_listing="šodien" in (listing.css(".msg_footer::text").get() or "").lower(),
+                airbnb_potential=self.calculate_potential(bedroom_data["true_bedrooms"])
+            )
+
+            if self.validate_item(item):
+                yield item
+
+    def parse_pricing(self, listing):
+        price_text = listing.css(".ads_price::text").get("")
         clean_text = price_text.replace("\xa0", "").replace(" ", "")
         if match := re.search(r"(\d+[\d,.]*)", clean_text):
             price = float(match.group(1).replace(",", "."))
@@ -91,9 +103,9 @@ class EnhancedSsLvSpider(CrawlSpider):
             }
         return None
 
-    def parse_rooms(self, response):
-        bedrooms = response.xpath("//td[contains(., 'Guļamistabas')]/following-sibling::td/text()").get()
-        total_rooms = response.xpath("//td[contains(., 'Istabu skaits')]/following-sibling::td/text()").get()
+    def parse_rooms(self, listing):
+        bedrooms = listing.xpath("//td[contains(., 'Guļamistabas')]/following-sibling::td/text()").get()
+        total_rooms = listing.xpath("//td[contains(., 'Istabu skaits')]/following-sibling::td/text()").get()
         
         true_bedrooms = None
         if bedrooms and bedrooms.isdigit():
@@ -101,7 +113,7 @@ class EnhancedSsLvSpider(CrawlSpider):
         elif total_rooms and total_rooms.isdigit():
             true_bedrooms = max(1, int(total_rooms) - 1)
         else:
-            if match := re.search(r"(\d+)\s+(guļamistabas|istabas)", response.text, re.IGNORECASE):
+            if match := re.search(r"(\d+)\s+(guļamistabas|istabas)", listing.text, re.IGNORECASE):
                 true_bedrooms = int(match.group(1))
 
         return {
@@ -109,10 +121,10 @@ class EnhancedSsLvSpider(CrawlSpider):
             "total_rooms": int(total_rooms) if total_rooms and total_rooms.isdigit() else None
         }
 
-    def parse_bathrooms(self, response):
-        bathrooms = response.xpath("//td[contains(., 'Vannas istaba')]/following-sibling::td/text()").get()
+    def parse_bathrooms(self, listing):
+        bathrooms = listing.xpath("//td[contains(., 'Vannas istaba')]/following-sibling::td/text()").get()
         if not bathrooms:
-            text = response.text.lower()
+            text = listing.text.lower()
             if match := re.search(r"(\d+)\s+(vannas|san\.?\s*mezgl)", text):
                 bathrooms = match.group(1)
             elif any(kw in text for kw in ["vanna", "sanmezgls", "duša"]):
@@ -120,10 +132,10 @@ class EnhancedSsLvSpider(CrawlSpider):
 
         return {"bathrooms": int(bathrooms) if bathrooms and bathrooms.isdigit() else None}
 
-    def parse_utilities(self, response):
-        utilities_text = response.xpath("//td[contains(., 'Komunālie')]/following-sibling::td/text()").get()
+    def parse_utilities(self, listing):
+        utilities_text = listing.xpath("//td[contains(., 'Komunālie')]/following-sibling::td/text()").get()
         if not utilities_text:
-            utilities_text = response.text
+            utilities_text = listing.text
             
         numbers = [float(n) for n in re.findall(r"\d+", utilities_text)]
         return {
@@ -131,14 +143,14 @@ class EnhancedSsLvSpider(CrawlSpider):
             "utilities_max": max(numbers) if numbers else None
         }
 
-    def parse_description(self, response):
+    def parse_description(self, listing):
         return " ".join([
-            p.strip() for p in response.css("#msg_div_msg::text").getall()
+            p.strip() for p in listing.css("#msg_div_msg::text").getall()
             if p.strip()
         ]) or None
 
-    def parse_post_date(self, response):
-        date_str = response.css(".msg_footer::text").get("")
+    def parse_post_date(self, listing):
+        date_str = listing.css(".msg_footer::text").get("")
         if "šodien" in date_str.lower():
             return datetime.now().strftime("%Y-%m-%d")
         return date_str.strip() or None
@@ -149,7 +161,7 @@ class EnhancedSsLvSpider(CrawlSpider):
     def validate_item(self, item):
         return all([
             item.get("price") and item["price"] >= self.min_price,
-            item.get("true_bedrooms") and 2 <= item["true_bedrooms"] <= 6,
-            item.get("bathrooms") is not None,
-            item.get("property_type")
+            item.get("true_bedrooms") and 2 <= item["true_bedrooms"] <= 3,
+            item.get("bathrooms") and 1 <= item["bathrooms"] <= 2,
+            item.get("property_type") == "Izīrē"
         ])
